@@ -1,0 +1,9 @@
+# Build artifacts
+build/*.o
+build/*.d
+build/*.map
+
+# Editor and temporary files
+.vscode/
+*.swp
+*.bak

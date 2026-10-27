@@ -1,0 +1,17 @@
+CompileFlags:
+  Add:
+    - -DSTM32G030xx
+    - -DUSE_HAL_DRIVER
+    - -ICore/Inc
+    - -ICore/serial_port_mointor
+    - -IDrivers/STM32G0xx_HAL_Driver/Inc
+    - -IDrivers/CMSIS/Device/ST/STM32G0xx/Include
+    - -IDrivers/CMSIS/Include
+  Remove:
+    - -mcpu=*
+    - -mthumb
+Diagnostics:
+  Suppress:
+    - unused-includes
+    - pp_hash_error
+    - unknown_argument

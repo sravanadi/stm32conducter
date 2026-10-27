@@ -1,0 +1,14 @@
+--target=arm-none-eabi
+-mcpu=cortex-m0plus
+-mthumb
+-ICore/Inc
+-ICore/serial_port_mointor
+-IDrivers/STM32G0xx_HAL_Driver/Inc
+-IDrivers/CMSIS/Device/ST/STM32G0xx/Include
+-IDrivers/CMSIS/Include
+-DSTM32G030xx
+-DUSE_HAL_DRIVER
+-isystem
+C:/ST/STM32CubeIDE_2.2.0/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.win32_1.0.100.202602081740/tools/arm-none-eabi/include
+-isystem
+C:/ST/STM32CubeIDE_2.2.0/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.win32_1.0.100.202602081740/tools/lib/gcc/arm-none-eabi/14.3.1/include

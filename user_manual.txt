@@ -1,0 +1,366 @@
+================================================================================
+                    MIRRANT TDS 4002 CONDUCTIVITY / TDS METER
+                             USER OPERATION MANUAL
+================================================================================
+Document File   : user_manual.txt
+Firmware Version: v1.0.4 PRO
+Target MCU      : STM32G030K8T6 (Arm Cortex-M0+ @ 16 MHz)
+Display Module  : 128x64 Graphic LCD (ST7565R SPI Controller, 3.3V)
+PCB Revision    : sens_display_02may25_1947
+Date of Issue   : October 2026
+
+--------------------------------------------------------------------------------
+TABLE OF CONTENTS
+--------------------------------------------------------------------------------
+1. Product Overview & Hardware Features
+2. Front-Panel Button Layout & Navigation
+3. Main Measurement Screen (Section 4.2)
+4. Comprehensive Menu & Parameter Setup Guide
+   - 1. Probe Set (K constant, Multi-point CAL, Temp/TDS Coef, Units)
+   - 2. Temperature (Probe Type, Units, Calibration, Reset)
+   - 3. Alarm Set (Relay I & II Control/Wash dynamic logic)
+   - 4. Current Set (Current Output I & II 4-20mA / 0-20mA setup)
+   - 5. Comm. Set (Modbus RS-485 Slave Address, Baud, Parity, Stop)
+   - 6. System Set (Display Speed, Backlight, Contrast, Password)
+   - 7. Test/Maint. (Hardware Relay Test, Current CAL, Simulation Mode)
+5. Daughterboard Installation & In-Field Calibration Guide
+6. RS-485 Modbus RTU Register Map (CDAB Float Format)
+7. Fault Diagnostics & Troubleshooting Guide
+
+================================================================================
+1. PRODUCT OVERVIEW & HARDWARE FEATURES
+================================================================================
+The Mirrant TDS 4002 is an industrial microprocessor-controlled instrument designed
+for continuous in-line monitoring and control of:
+  - Electrical Conductivity (EC): 0.000 uS/cm to 20,000 uS/cm (or 20.00 mS/cm)
+  - Resistivity (RES): 0.000 to 18.250 MOhm*cm (pure water limit)
+  - Total Dissolved Solids (TDS): 0.0 to 10,000 ppm
+  - Practical Salinity (SAL): 0.00 to 15.00 ppt
+  - Process Temperature: -10.0 C to 130.0 C (or 14.0 F to 266.0 F)
+
+Key Hardware Specifications:
+  * Non-polarizing AC Excitation: Dual-phase square wave drive on PA6/PA7.
+  * Analog Sensing: 12-bit ADC with 16x hardware oversampling on PA0 & PA5.
+  * Dual Solid-State Control Relays: Optically isolated LS1 (PA3) and LS2 (PA4).
+  * Industrial Serial Port: THVD1450 RS-485 transceiver (PB5/PB6/PB7).
+  * Ultra-Low Power Graphic LCD: ST7565R 128x64 pixels with white LED backlight.
+
+================================================================================
+2. FRONT-PANEL BUTTON LAYOUT & NAVIGATION
+================================================================================
+The instrument features four high-reliability tactile push buttons on the front panel.
+Physical arrangement from left to right:
+
+  [ SW4: MENU ]      [ SW3: DOWN ]      [ SW2: RIGHT ]      [ SW1: ENTER ]
+   (Far Left)        (Middle Left)      (Middle Right)       (Far Right)
+   MCU Pin: PB4       MCU Pin: PB3       MCU Pin: PB2        MCU Pin: PB1
+
+Button Function Mapping by Operating Mode:
+--------------------------------------------------------------------------------
+Button | Measurement Mode            | Menu Navigation    | Numeric / Option Edit
+-------+-----------------------------+--------------------+----------------------
+SW4    | Short press: Open Main Menu | Return to previous | CANCEL / ESC
+(MENU) | Long press (>1s): Return to | menu level (Back)  | Abandons modification
+       | Measurement Mode from any   |                    | and returns to menu.
+       | sub-menu screen             |                    |
+-------+-----------------------------+--------------------+----------------------
+SW3    | Toggle Sub-display Bar:     | Move cursor DOWN   | Decrement digit (-1)
+(DOWN) | Mode 1: Temp & K-Constant   | to next item.      | or toggle sign (+/-)
+       | Mode 2: TDS & Salinity      |                    |
+-------+-----------------------------+--------------------+----------------------
+SW2    | Cycle Measurement Type:     | Move cursor UP     | Move edit cursor
+(RIGHT)| COND -> RES -> TDS -> SAL   | to previous item.  | RIGHT to next digit.
+-------+-----------------------------+--------------------+----------------------
+SW1    | Open STATUS diagnostic      | Select highlighted | SAVE parameter to
+(ENTER)| screen (relays, raw EC,     | item or enter sub- | Flash memory and
+       | active calibration points)  | menu level.        | return to menu.
+--------------------------------------------------------------------------------
+
+================================================================================
+3. MAIN MEASUREMENT SCREEN (SECTION 4.2)
+================================================================================
+The default screen upon power-up is laid out into four distinct vertical zones:
+
+  Row 0-15  (Pages 0-1): TOP BAR (Inverted, white-on-black 8x16 font)
+    - Displays R1 and R2 state with graphical animated switch symbols:
+      'R1 /_' (Open switch = De-energized)
+      'R1 --' (Closed switch = Relay Energized)
+      Same symbol displayed for R2 on the right.
+
+  Row 16-23 (Page 2): MEASUREMENT TYPE & ENGINEERING UNIT (5x7 font)
+    - Left side: Active measurement type ('COND', 'RES', 'TDS', or 'SAL').
+    - Right side: Engineering unit ('US/CM', 'MS/CM', 'MOHM.CM', 'PPM', 'PPT').
+
+  Row 24-47 (Pages 3-5): PRIMARY MEASURED VALUE (16x24 large font)
+    - Centered large 4-significant-digit live measured value.
+    - If the measurement exceeds 20 mS/cm, a 15x24 warning triangle (!) appears at
+      column 2 on the left side of the screen.
+    - If no probe is connected: displays 'NO PROBE'.
+    - If probe electrodes are shorted: displays 'SHORT'.
+    - If wash cycle is active with Wash State = HOLD: displays frozen last reading.
+
+  Row 48-63 (Pages 6-7): SUB-DISPLAY BAR (Inverted, white-on-black 8x16 font)
+    - Toggled using SW3 (DOWN):
+      * Mode 1: Live Temperature on the left ('25.4C'), Cell Constant on right ('K:1.000').
+      * Mode 2: Total Dissolved Solids on left ('TDS 706'), Salinity on right ('SAL 0.71').
+
+================================================================================
+4. COMPREHENSIVE MENU & PARAMETER SETUP GUIDE
+================================================================================
+Press SW4 (MENU) from the main screen to enter the 7-Category Main Menu:
+  1. PROBE SET
+  2. TEMPERATURE
+  3. ALARM SET
+  4. CURRENT SET
+  5. COMM. SET
+  6. SYSTEM SET
+  7. TEST/MAINT
+
+--------------------------------------------------------------------------------
+CATEGORY 1: PROBE SET
+--------------------------------------------------------------------------------
+1.1 K CONSTANT SET:
+    - Sets the physical cell constant of the sensor (e.g., 0.010, 0.100, 1.000, 10.000).
+    - Use SW2 to select digits, SW3 to adjust, SW1 to SAVE.
+    - Immediate Effect: Recalculates raw conductivity: sigma = K * 1,000,000 / R_cell.
+
+1.2 PROBE CAL (Submenu):
+    1. EC OFFSET: Zero-point offset in uS/cm.
+    2. EC FACTOR: Linear slope multiplier (default 1.000).
+    3. 1ST POINT CAL .. 7. 5TH POINT CAL:
+       - Enters the point calibration wizard. Place probe into calibration standard
+         (e.g., 1413 uS/cm). Screen checks live stability. Once "STABLE (READY)"
+         is shown, press SW1 to lock the standard value into Flash.
+    8. RESET CAL:
+       - Options: 1. Cancel, 2. OK.
+       - Selecting OK clears all calibration points, resets offset to 0.0 and factor to 1.0.
+
+1.3 TEMP. COEF.:
+    - Linear temperature compensation coefficient in %/C (default: 2.00 %/C).
+    - Adjustable from 0.00 %/C to 9.99 %/C.
+
+1.4 TDS COEF.:
+    - Conversion ratio from conductivity to TDS (default: 0.500 ppm per uS/cm).
+    - Adjustable from 0.100 to 1.000.
+
+1.5 DISPLAY UNIT:
+    - Options: 1. AUTO [Default], 2. US/CM, 3. MS/CM.
+    - AUTO mode automatically displays uS/cm below 10,000 and switches to mS/cm above.
+
+--------------------------------------------------------------------------------
+CATEGORY 2: TEMPERATURE
+--------------------------------------------------------------------------------
+2.1 PROBE TYPE:
+    - Options: 1. NTC10K [Default], 2. PT1000, 3. MANUAL.
+    - NTC10K uses Steinhart-Hart equation (Beta=3950).
+    - PT1000 uses Callendar-Van Dusen equation (IEC 60751).
+    - MANUAL uses fixed user-defined temperature (default 25.0 C).
+
+2.2 TEMP. UNIT:
+    - Options: 1. xxx.x C [Default], 2. xxx.x F.
+    - Updates temperature displays across all screens.
+
+2.3 TEMP. CAL:
+    - Temperature offset trim (-10.0 C to +10.0 C).
+    - Added to measured temperature to match an external reference thermometer.
+
+2.4 RESET TEMP. CAL:
+    - Options: 1. Cancel, 2. OK.
+    - Resets temperature offset to 0.0 C.
+
+--------------------------------------------------------------------------------
+CATEGORY 3: ALARM SET (RELAY I & RELAY II)
+--------------------------------------------------------------------------------
+Select 1. RELAY I or 2. RELAY II. The menu dynamically adjusts based on Function:
+
+A. CONTROL MODE (When Function is set to COND, Temp, RES, TDS, or SAL):
+    1. FUNCTION SET: Select metric to control (COND, Temp, RES, TDS, SAL, or WASH).
+    2. SET ON VALUE: Threshold at which relay turns ON.
+    3. SET OFF VALUE: Threshold at which relay turns OFF.
+       * High Alarm: On_Val > Off_Val (turns ON when value rises above On_Val;
+         turns OFF when value falls below Off_Val).
+       * Low Alarm: On_Val < Off_Val (turns ON when value drops below On_Val;
+         turns OFF when value rises above Off_Val).
+
+B. WASH MODE (When Function is set to WASH RELAY):
+    1. FUNCTION SET: Can change back to control mode.
+    2. WASH INTERVAL: Cleaning cycle interval in minutes (1 to 999 min).
+    3. WASH TIME: Duration of active cleaning in seconds (1 to 999 sec).
+    4. WASH STATE:
+       - 1. HOLD: Freezes the display reading during cleaning to avoid false alarms.
+       - 2. CONSTANT: Shows live raw readings during cleaning.
+
+--------------------------------------------------------------------------------
+CATEGORY 4: CURRENT SET (ANALOG OUTPUTS I & II)
+--------------------------------------------------------------------------------
+Configure analog current loops (Current I or Current II):
+4.1 OUTPUT TYPE:
+    - Options: 1. 4-20mA [Default], 2. 0-20mA.
+
+4.2 CHANNEL SELECT:
+    - Options: 1. COND Channel [Default I], 2. Temp. Channel [Default II],
+               3. RES Channel, 4. TDS Channel, 5. SAL Channel.
+
+4.3 MAX. VALUE:
+    - Process value corresponding to 20.0 mA output.
+
+4.4 MIN. VALUE:
+    - Process value corresponding to 4.0 mA (or 0.0 mA) output.
+
+--------------------------------------------------------------------------------
+CATEGORY 5: COMM. SET (MODBUS RS-485)
+--------------------------------------------------------------------------------
+5.1 SLAVE ADDRESS:
+    - Modbus RTU slave ID (1 to 247, default: 1).
+
+5.2 BAUD RATE:
+    - Options: 1. 4800, 2. 9600 [Default], 3. 19200, 4. 38400, 5. 57600, 6. 115200 BPS.
+    - Automatically reconfigures USART1 hardware immediately upon saving.
+
+5.3 VERIFY BIT:
+    - Options: 1. NONE [Default], 2. ODD, 3. EVEN.
+
+5.4 STOP BIT:
+    - Options: 1. 1 Bit [Default], 2. 2 Bit.
+
+--------------------------------------------------------------------------------
+CATEGORY 6: SYSTEM SET
+--------------------------------------------------------------------------------
+6.1 DISPLAY SPEED:
+    - Digital filter smoothing level:
+      1. Buffers Level 2 (fastest response, minimal damping)
+      2. Buffers Level 4 [Default]
+      3. Buffers Level 8
+      4. Buffers Level 16
+      5. Buffers Level 32 (maximum damping, rock-solid stable in turbulent water)
+
+6.2 BACKLIGHT:
+    1. SCANTY POWER:
+       - Select timeout: 1. 01 Minute, 2. 05 Minute, 3. 10 Minute.
+       - Backlight automatically dims off if no buttons are pressed within the timeout;
+         wakes up instantly upon pressing any button.
+    2. ALWAYS ON: Backlight remains illuminated permanently.
+
+6.3 CONTRAST SET:
+    - Interactive contrast tuning screen.
+    - Press SW3 to decrease (-1), SW2 to increase (+1).
+    - LCD electronic volume adjusts in real time. Press SW1 to SAVE or SW4 to CANCEL.
+
+6.4 SOFTWARE:
+    - Displays Model (TDS 4002), Firmware Version (v1.0.4 PRO), and Build Date.
+
+6.5 PASSWORD:
+    - 4-digit PIN security code (default: 0000).
+
+--------------------------------------------------------------------------------
+CATEGORY 7: TEST / MAINTENANCE
+--------------------------------------------------------------------------------
+7.1 CURRENT CAL:
+    - Trim 4 mA and 20 mA analog calibration endpoints.
+
+7.2 RELAY TEST:
+    - Select Relay I or Relay II.
+    - Options: 1. TURN-ON, 2. TURN-OFF.
+    - Directly energizes/de-energizes the physical relay on the board so you can verify
+      relay clicks and wiring with a multimeter.
+
+7.3 CURRENT TEST:
+    - Allows manual current injection (e.g. 12.0 mA) to test external PLC loops.
+
+7.4 MEASURE MODE:
+    - Options: 1. PROBE MEASURE [Default], 2. SIM. MEASURE.
+    - PROBE MEASURE: Reads live signals from physical electrodes.
+    - SIM. MEASURE: Generates a benchmark 1413 uS/cm @ 25.0 C reading for bench testing
+      when no sensor or daughterboard is connected.
+
+7.5 RESTORE DEFAULTS:
+    - Options: 1. Cancel, 2. OK.
+    - Resets all parameters to factory defaults, clears custom calibrations, and restarts.
+
+================================================================================
+5. DAUGHTERBOARD INSTALLATION & IN-FIELD CALIBRATION GUIDE
+================================================================================
+
+Step 1: Bench Testing Before Daughterboard Installation
+  1. Power the MCU board via 3.3V / 5V.
+  2. With no daughterboard connected, the screen displays 'NO PROBE'.
+  3. Go to Menu: 7. TEST/MAINT -> 4. MEASURE MODE -> select '2. SIM. MEASURE'.
+  4. Return to main screen: it will immediately display '1413 US/CM' and '25.0C',
+     allowing you to verify all screens, button switching, and relay thresholds!
+
+Step 2: Connecting the Daughterboard & Sensor
+  1. Mount the daughterboard onto the main MCU board.
+  2. Connect the conductivity electrode leads to PA0 (Signal) and PA6/PA7 (Excitation).
+  3. Connect the temperature sensor leads to PA5 and GND.
+  4. Go to Menu: 7. TEST/MAINT -> 4. MEASURE MODE -> select '1. PROBE MEASURE'.
+  5. The meter is now reading 100% live physical conductivity and temperature.
+
+Step 3: In-Field Calibration Procedure (Standard 1413 uS/cm)
+  1. Clean the electrode thoroughly with deionized / distilled water.
+  2. Immerse the probe into fresh 1413 uS/cm calibration standard solution.
+  3. Gently stir to remove any trapped air bubbles from the electrode surface.
+  4. Press SW4 (MENU) -> Select '1. PROBE SET' -> Select '2. PROBE CAL'.
+  5. Select '3. 1ST POINT CAL'.
+  6. The screen shows live RAW reading and STD standard value (1413 uS/cm).
+  7. Wait until the display shows "STABLE (READY)".
+  8. Press SW1 (ENTER / SAVE).
+  9. The calibration point is permanently stored in Flash Page 31.
+  10. Press SW4 long-press to return to Measurement Mode. The meter will read
+      exactly 1413 uS/cm with temperature compensation!
+
+================================================================================
+6. RS-485 MODBUS RTU REGISTER MAP (CDAB FLOAT FORMAT)
+================================================================================
+Protocol: Modbus RTU Slave
+Default Configuration: 9600 Baud, 8 Data Bits, No Parity, 1 Stop Bit (Slave ID: 1)
+Supported Function Code: 0x04 (Read Input Registers)
+
+All floating-point values are 32-bit single precision IEEE-754 encoded in
+CDAB (Mid-Little Endian / 3412 byte swap) order.
+
+Register Range | Data Type | Description                           | Units
+---------------+-----------+---------------------------------------+-------------
+30001 - 30002  | Float32   | Process Temperature                   | Degrees C
+30003 - 30004  | Float32   | Temperature-Compensated Conductivity  | uS/cm
+30005 - 30006  | Float32   | Resistivity                           | MOhm * cm
+30013 - 30014  | Float32   | Total Dissolved Solids (TDS)          | ppm
+30015 - 30016  | Float32   | Practical Salinity                    | ppt
+
+Example Modbus Query (Read Conductivity & Temperature):
+  TX Request:  [01] [04] [00] [00] [00] [04] [F1] [C9]
+  RX Response: [01] [04] [08] [CD] [AB] [CD] [AB] [CD] [AB] [CD] [AB] [CRC_L] [CRC_H]
+
+================================================================================
+7. FAULT DIAGNOSTICS & TROUBLESHOOTING GUIDE
+================================================================================
+Symptom / Message   | Probable Cause                 | Corrective Action
+--------------------+--------------------------------+--------------------------
+'NO PROBE' on screen| Sensor disconnected or cable   | Check probe wiring to PA0.
+                    | cut (R_cell > 10 MOhm).        | Ensure electrodes are
+                    | Electrodes dry in air.         | submerged in liquid.
+--------------------+--------------------------------+--------------------------
+'SHORT' on screen   | Electrodes short-circuited or  | Clean electrode gap. Check
+                    | conductive debris lodged.      | for bent pins or shorted cable.
+--------------------+--------------------------------+--------------------------
+Warning Triangle (!) | Measured conductivity exceeds  | Check if solution exceeds
+displayed on left   | 20,000 uS/cm (20 mS/cm).       | range or use lower K-constant
+                    |                                | cell (e.g. K=10.0).
+--------------------+--------------------------------+--------------------------
+Temperature missing | NTC/PT1000 disconnected or bad | Check sensor wiring to PA5.
+on sub-display bar  | pull-up resistor.              | Meter automatically falls back
+                    |                                | to manual 25.0 C compensation.
+--------------------+--------------------------------+--------------------------
+Screen reading frozen| Wash cycle active with Wash    | Normal operation if Wash
+                    | State set to HOLD.             | Relay is active. Will release
+                    |                                | when wash timer finishes.
+--------------------+--------------------------------+--------------------------
+Backlight turns off | Scanty Power mode active and   | Press any button to re-light.
+after a few minutes | timer expired.                 | Set Backlight to 'ALWAYS ON'
+                    |                                | in Menu 6.2 if desired.
+--------------------+--------------------------------+--------------------------
+Wrong reading after | Cell constant mismatch or      | Verify K constant in Menu 1.1.
+replacing probe     | uncalibrated sensor.           | Perform 1ST POINT CAL in 1413
+                    |                                | uS/cm standard solution.
+================================================================================
+END OF USER OPERATION MANUAL [user_manual.txt]
+================================================================================

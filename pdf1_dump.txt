@@ -1,0 +1,460 @@
+--- PAGE 1 ---
+ 
+                           MIRRANT AUTOMATION PRIVATE LIMITED 
+                                                                                                           
+MIRRANT 
+                                      TDS/Conductivity Meter 
+                                                                 TDS 4002 
+                                                
+                                                                                                                                                                                  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+                                       
+ 
+--- PAGE 2 ---
+     
+                                    MIRRANT AUTOMATION PRIVATE LIMITED 
+ 
+                                                                                                                                     
+                                                                                                           
+Contents  CONTENTS  
+Chapter 1 Overview ................................ .................................................................... 1 
+Chapter 2 Mechanical Installation ................................................................ ............... 2 
+2.1 Dimension ................................ ...................................................................... 2 
+2.2 Installation ................................ ...................................................................... 2 
+Chapter 3 Electrical Installation .................................................................................. 3 
+3.1 Power Connection .......................................................................................... 3 
+3.2 Terminal Definition .......................................................................................... 4 
+Chapter 4 User Interface ............................................................................................ 5 
+4.1 Panel Button ................................................................................................... 5 
+4.2 Display Screen ............................................................................................... 6 
+Chapter 5 Menu Description ....................................................................................... 7 
+5.1 Probe Setting ................................................................................................. 7 
+5.2 Alarm Setting .................................................................................................. 8 
+5.3 Current Setting ............................................................................................... 8 
+5.4 Comm. Setting ............................................................................................... 8 
+Appendix .................................................................................................................... 9 
+ModBus Register Introduction ................................................................ .............. 9 
+Menu Structure Diagram .................................................................................... 10 
+ 
+--- PAGE 3 ---
+     
+                                    MIRRANT AUTOMATION PRIVATE LIMITED 
+                                                                                                           
+ 
+Chapter 1 Overview  Chapter 1 Overview  
+The online conductivity meter adopts a 2-electrode measurement method, which can be applied to 
+various conductivity monitoring and control occasions. 
+ 
+1.1 Technical Parameters 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+Display Range 
+Conductivity: 0~20mS/cm Min. resolution: 0.001uS/cm 
+Resistivity: 0~18MΩ·cm Min. resolution: 0.001MΩ·cm 
+TDS: 0~10000ppm Min. resolution: 0.001ppm 
+Salinity: 0~15ppt Min. resolution: 0.001ppt 
+Temp.:-10~150℃ Fixed resolution: 0.1℃ 
+Accuracy Conductivity: ±1%FS, temp.: ±0.5℃ 
+Temp. Compensation NTC10K/PT1000 automatic or manual 
+ 
+Relay Control 
+Two SPST relays, contact capacity: 3A 250V AC 
+Control Type: main value/temp./wash/resistivity/TDS/salinity 
+ 
+Current Output 
+Two active 4~20mA or 0~20mA, max. Load 1000Ω 
+Corresponding channel: main value/temp./resistivity/TDS/salinity 
+Comm. Interface(1) A RS485, support MODBUS-RTU protocol 
+Calibration Method Conductivity:Deviation & factor/1~5 point linear calibration 
+Display Screen 3.2 inch graphic LCD display 
+Configuration information Power failure protection, parameters are retained indefinitely 
+Operating Environment 0~+60℃, relative humidity 0~95%, no condensation 
+Storage Environment -20~+70℃, relative humidity 0~55%, no condensation 
+Power Supply 100~240VAC or 18~36VDC, 3W Max 
+Installation Method Panel mounting 
+Instrument Dimension 100*100*120(unit: mm) 
+Protection Grade IP66 
+Instrument Weight About 500g 
+Note: (1) Only meters starting with LK are configured with a communication function.. 
+--- PAGE 4 ---
+MIRRANT AUTOMATION PRIVATE LIMITED 
+Cha ter 2 Mechanical Installation 
+2.1 Dimension 
+100mm 
+0 @ 0 
+100mm 
+[�ITJB�] 
+@ 0 
+2.2 Installation 
+E 
+E 
+0 0 
+23mm• • 
+Figure 2-1 Instrument dimension 
+120mm 
+rnmi 
+' 
+90*90 mm 
+�?\ 
+,� 
+When the controller is selected for panel mounting, the user passes the fixing clips through the back 
+of the instrument until it is tightened, and the mounting dimensions and diagram are shown below: 
+-------------- �--
+n 
+Figure 2-2 Panel mounting 
+sa les@mirrant.com 
+J60MM 
+rG 
+GJ 
+I
+I
+[±]
+� 
+92riM 
+Figure 2-3 The minimum opening spacing 
+
+MIRRANT 
+--- PAGE 5 ---
+     
+                                    MIRRANT AUTOMATION PRIVATE LIMITED 
+                                                                                                           
+ 
+ Chapter 3 Electrical Installation  
+ 
+3.1 Power Connection 
+ 
+After unscrewing the screws on the back of the meter, remove the cover and see the terminal 
+blocks. According to the power supply type of the instrument, access 100~240VAC or 18~36VDC. 
+Note: Before connecting AC power, be sure to cut off the power supply 
+ 
+ 
+ 
+Figure 3-1 Two types of power terminals 
+ 
+ 
+Two kinds of power terminals are defined in the Table: 
+ 
+ 
+POWER 
+AC IN 
+100-240V 
+L AC power LIVE wire  
+POWER 
+DC IN 
+18-36V 
++ DC power positive 
+ 
+ 
+AC power ground wire NC Floating terminal 
+N AC power NEUTRAL wire - DC power negative 
+
+--- PAGE 6 ---
+     
+                                    MIRRANT AUTOMATION PRIVATE LIMITED 
+                                                                                                           
+ 
+3.2 Terminal Definition 
+ 
+The electrode cable is connected to the CELL, CELL, TEMP terminals, and the rest are connected 
+according to actual needs. 
+ 
+ 
+Figure 3-2 terminal blocks 
+ 
+ 
+The terminal locations and names are shown in the table below: 
+ 
+CELL Conductivity probe input terminal  
+RS485(1) A RS485 signal D+(A) 
+NC Floating terminal B RS485 signal D-(B) 
+CELL Conductivity probe input terminal  
+RELAY1 
+Relay 1 contact 
+ 
+TEMP 
+Temp. probe input terminal Relay 1 contact 
+Temp. probe input terminal  
+RELAY2 
+Relay 2 contact 
+ 
+OUT1 
++ Current 1 Output positive Relay 2 contact 
+- Current 1 Output negative NC Floating terminal 
+ 
+OUT2 
++ Current 2 Output positive   
+- Current 2 Output negative   
+Note: (1) Only meters starting with LK are equipped with RS485 function, the terminal of the 
+unconfigured instrument is marked with "NC" 
+--- PAGE 7 ---
+     
+                                    MIRRANT AUTOMATION PRIVATE LIMITED 
+                                                                                                           
+ 
+ Chapter 4 User Interface  
+ 
+4.1 Panel Button 
+ 
+ 
+Button Function 
+ 
+ 
+ 
+ 
+In the main menu, long press to return to the measurement mode 
+In the sub menu, return to the previous menu 
+When setting the value, abandon the modification and return to the previous menu 
+During calibration, cancel the calibration process 
+In measurement mode, enter the main menu 
+ 
+ 
+ 
+ 
+In measure mode, switch between two secondary display modes 
+In the menu, move the cursor down 
+When setting the value, subtract 1 from the value, or to change the sign bit 
+ 
+ 
+ 
+ 
+In measurement mode, switch between four measurement value display modes 
+(conductivity, resistivity, TDS, salinity) 
+In the menu, move the cursor up 
+When setting the value, move the cursor right 
+ 
+ 
+ 
+ 
+In measurement mode, display the measurement status interface 
+In the menu, enter the sub menu or the item selected by the cursor 
+When setting the parameter (value or option), save the setting and return to the 
+previous menu 
+
+--- PAGE 8 ---
+     
+                                    MIRRANT AUTOMATION PRIVATE LIMITED 
+                                                                                                           
+ 
+Measurement Unit 
+Sub-display Bar 
+TEMP. 
+ Cell Constant 
+Measurements 
+Relay State 
+Relay State 
+Measure Type 
+4.2 Display Screen 
+ 
+The meter normally displays the measurement interface after power-on. The specific information is 
+as follows: 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+⚫ Relay state: indicate the current relay state: on or off 
+⚫ Measurements/Type/Unit: indicate the current measurement type, value and unit, If a triangle 
+symbol with “ ! ” appears on the measurement interface, it means the measurementis out of the 
+range. In the measurement mode, press the button to switch conductivity(COND), 
+resistivity(RES), TDS, salinity(SAL). 
+⚫ Sub-display bar: press  under the measurement interface to switch the sub-display bar 
+information: “ Temp.&cell constant ” and “ two currents values ” 
+⚫ Temperature: display the current Temp. value, the temp. value is not displayed when the temp. 
+probe is not connected. 
+⚫ Cell constant: display the current K constant of probe . 
+
+--- PAGE 9 ---
+     
+                                    MIRRANT AUTOMATION PRIVATE LIMITED 
+                                                                                                           
+ 
+ Chapter 5 Menu Description  
+In the measurement interface, long press the  button to enter the menu. This chapter 
+describes the main features. 
+ 
+5.1 Probe Setting 
+ 
+⚫ K constant set 
+After the meter is connected to the electrode, the actual cell constant needs to be input first. 
+⚫ Probe Calibration 
+➢ EC offset/EC factor 
+Correct the conductivity measurement value by setting the offset and factor. 
+After setting, EC measurement value = original EC measurement value* EC factor + EC offset. 
+➢ 1~5 point linear calibration 
+Perform 1~5 point calibration according to the actual water sample value. For multi -point 
+calibration, it is recommended to uniformly select calibration points within the actual 
+measurement range. During calibration, it is necessary to calibrate from the first point in the 
+order of conductivity from low to high. The operation method is as follows: 
+(1) First prepare 1 to 5 water samples with known conductivity values, sort them from low to 
+high conductivity values, and record them as water samples 1 to 5. 
+(2) Clean the electrode with deionized water, dry  it with filter paper, put in the water sample 
+1 with the lowest conductivity value, wait for the measured value to stabilize, enter the 
+"1st point CAL" in the menu, and set the calibration value to the conductivity value of 
+sample 1, press “enter” key to start the calibration, and wait for the calibration to end. 
+(3) If multi -point calibration is required, after completing the "1st point CAL", take the 
+electrode out of water sample 1, clean  it with deionized water, dry it with filter paper, put 
+it into water sample 2, and wait for the value is stable, enter the "2nd point CAL" in the 
+menu, set the calibration value as the conductivity value of water sample 2, press “enter” 
+key to start the calibration, and wait for the calibration to end. 
+(4) The methods from "3rd point CAL" to "5th point CAL" are the same. 
+Note: Choose to calibrate the 1st point during one -point calibration, select to calibrate the 1st 
+and 2nd points during two-point calibration, select to calibrate the 1st to 3rd points during three- 
+point calibration, and select to calibrate the 1st to 4th point during four-point calibration. 
+⚫ Temperature Compensation Coefficient 
+Since the meter displays the conductivity value at 25°C, it is necessary to set the conductivity 
+temp. compensation coefficient of the water sample. The meter will convert the conductivity 
+value at the current temp. to the value at 25°C through the built-in formula and then display it. . 
+⚫ TDS Coefficient 
+Set the TDS coefficient, TDS value = conductivity value (uS/cm) * TDS coefficient. 
+
+--- PAGE 10 ---
+     
+                                    MIRRANT AUTOMATION PRIVATE LIMITED 
+                                                                                                           
+ 
+5.2 Alarm Setting 
+ 
+⚫ Control function 
+When “Main value Control”/“Temp. Control”/“Resistivity Control”/“TDS control”/“Salinity control” 
+is selected in the “ Function Set ” menu, the relay is a control output relay. 
+ 
+When “ On Value ” > “ Off Value ” are set in the menu, the relay is a high alarm control. 
+When “ On Value ” < “ Off Value ” are set in the menu, the relay is low alarm control. 
+ 
+⚫ Wash relay 
+When “ wash relay ” is selected in the “ Function Set ” menu, the relay is in the wash output 
+state, and the relay will on and off in the set cycle for wash control. 
+When “ Hold ” is selected for “ wash State ”, when cleaning, the measurement display value 
+remains unchanged before the relay is operated. 
+When “ constant ” is selected for “ wash State ”, the measurement value is the real-time value 
+of continuous measurement. 
+ 
+5.3 Current Setting 
+ 
+Use a current signal to output the measured value. 
+Set the measured value for the current in “ Channel Select ”. 
+The measured values corresponding to the current output “ 20mA ” and “ 0mA/4mA ” are set in 
+“ Max. Value ” and “ Min. value ”, respectively. 
+ 
+5.4 Comm. Setting 
+ 
+Use RS485 interface to output the measured value. 
+The instrument adopts Modbus standard communication.Refer to the appendix for the 
+description of relevant registers. 
+--- PAGE 11 ---
+     
+                                    MIRRANT AUTOMATION PRIVATE LIMITED 
+                                                                                                           
+ 
+⚫ Read the temperature value, take the 
+temperature value as 25℃ as an example 
+ 
+Host sends: 01 04 00 00 00 02 71 CB 
+illustrate: 
+01: slave address 
+04: Function code 
+00 00: Register starting address 
+00 02: Number of registers 
+71 CB: CRC16 check code 
+ 
+Meter returns: 01 04 04 00 00 41 C8 CA 42 
+illustrate: 
+01: slave address 
+04: Function code 
+04: Number of bytes returned 
+00 00 41 C8: The instrument outputs a  floating- 
+point number whose byte order is CDAB, and the 
+order converted into ABCD is 0x41C80000, 
+corresponding to the decimal value 25 
+CA 42: CRC16 check code 
+⚫ Read the conductivity value, take the 
+conductivity value as 100uS/cm as an example 
+ 
+Host sends: 01 04 00 02 00 02 D0 0B 
+illustrate: 
+01: slave address 
+04: Function code 
+00 02: Register starting address 
+00 02: Number of registers 
+D0 0B: CRC16 check code 
+ 
+Meter return: 01 04 04 00 00 42 C8 CA B2 
+illustrate: 
+01: slave address 
+04: Function code 
+04: Number of bytes returned 
+00 00 42 C8: The instrument outputs a floating- 
+point number whose byte order is CDAB. The 
+order converted into ABCD is 0x42C80000, 
+which corresponds to a decimal value of 100. 
+CA B2: CRC16 check code 
+ Appendix  
+ 
+ModBus Register Introduction 
+ 
+The default instrument communication setting is 9600-8-N-1, and the default slave address is 1. If 
+you need to change it, you need to go to the "Communication Settings" menu to make settings. 
+The parameters corresponding to the register address are defined as follows: 
+ 
+Register Start 
+Address 
+Function 
+Code Parameters Number of Registers Data Format 
+0 04 Temp. value (℃) 2 32-bit floating point default CDAB (3412) 
+2 04 Conductivity value (uS/cm) 2 32-bit floating point default CDAB (3412) 
+4 04 Resistivity value (MΩ·cm) 2 32-bit floating point default CDAB (3412) 
+12 04 TDS value (ppm) 2 32-bit floating point default CDAB (3412) 
+ 
+14 
+ 
+04 
+ 
+Salinity value (ppt) 
+ 
+2 32-bit floating point default CDAB (3412) 
+An example of the host reading the instrument measurement value and sending data (taking the instrument 
+slave address as 1 as an example): 
+ 
+--- PAGE 12 ---
+     
+                                    MIRRANT AUTOMATION PRIVATE LIMITED 
+                                                                                                           
+ 
+Menu Structure Diagram 
+ 
+ 
+ 
+--- PAGE 13 ---
+     
+                                    MIRRANT AUTOMATION PRIVATE LIMITED 
+                                                                                                           
+ 
+ 
+

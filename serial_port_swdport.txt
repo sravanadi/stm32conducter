@@ -1,0 +1,107 @@
+Why the Sent Keys Were Not Working
+Two main reasons caused the sent keys not to register:
+
+The MCU Was Still Running Old Firmware:
+When you started 
+
+serial_monitor.bat
+, the new firmware build had not yet been programmed into the microcontroller's Flash memory. The board was running previous code that only accepted binary Modbus frames and discarded all ASCII terminal keyboard commands.
+
+STM32 UART Error Lockup (ORE/FE) & Half-Duplex RS-485 Settling:
+In the STM32G0 architecture, when an RS-485 transceiver toggles direction from TX to RX (PB5 transitions from HIGH to LOW), line settling transients can trip the hardware Framing Error (FE) or Overrun Error (ORE) flags in USART1->ISR. When these flags are set without explicit clearing, the STM32 hardware inhibits the RXNE register, effectively freezing UART reception.
+
+What Was Fixed & Enhanced
+Firmware (Core/serial_port_mointor/serial_port_mointor.c):
+
+Overrun Lockup Disabled: Enabled USART_CR3_OVRDIS so overrun conditions never halt the UART receiver.
+Continuous Error Flag Clearing: Added automatic clearing of ORE, FE, NE, and PE flags in USART1->ICR before reading data.
+RS-485 Post-TX Settling: Added a post-transmission settling window and flushed line-bounce noise before re-arming the receiver.
+Instant Keystroke Processing: All single-character keys (h, ?, d, r, s, j, f, 1, 2, c, v) are now processed immediately the instant they hit USART1->RDR, without waiting for timeouts or Enter/newlines.
+Terminal Monitor Script (serial_monitor.ps1):
+
+Added $serial.BaseStream.Flush() immediately after every keystroke to force the Windows COM port driver to transmit over the wire without OS buffer delays.
+Replaced blocking ReadLine() calls with a non-blocking ReadExisting() chunk parser, eliminating 50 ms timeout stalls and displaying responses instantly.
+Firmware Recompiled & Flashed:
+
+Built cleanly with 0 warnings and 0 errors.
+Successfully flashed directly to your STM32G030K8T6 via the connected ST-LINK programmer (SN: 066FFF565251887067025250).
+Performed software reset; the board is running the updated code.
+How to Test Now
+If 
+
+serial_monitor.bat
+ is currently open in your terminal, press q or close the window.
+Launch 
+
+serial_monitor.bat
+ again (or run .\serial_monitor.bat in Command Prompt / PowerShell).
+Select your COM port (e.g. COM3 or COM4).
+You will immediately see the startup banner and live telemetry stream:
+text
+[11:26:40.100] COND: 1413.0 uS/cm | TEMP: 25.0 °C | TDS: 706.5 ppm | RES: 0.708 MΩ | SAL: 0.00 ppt | R1: OFF | R2: OFF
+Press any hotkey directly (no need to press Enter):
+h — Displays the command menu.
+j — Switches live feed to JSON mode ({"time":...,"cond":...}).
+s — Pauses or resumes the live stream.
+d — Requests a single immediate data snapshot.
+1 / 2 — Manually toggles Relay 1 and Relay 2.
+c — Displays active calibration settings and cell constant K.
+
+----------------------------------------------------------------------------------------------------------------------------------
+
+In your terminal session, you selected:
+
+text
+[3] COM5 - STMicroelectronics STLink Virtual COM Port (COM5)
+And then sent keys:
+
+text
+[KEY SENT: 's']
+[KEY SENT: 'S']
+The reason no data appeared is a physical wiring disconnect:
+
+COM5 is the Virtual COM Port on your ST-LINK / Nucleo programmer board.
+The ribbon cable connected from the ST-LINK to the target board's J3 header carries SWD programming signals only:
+Pin 1: 3.3V
+Pin 2: PA13 (SWDIO)
+Pin 3: PA14 (SWCLK)
+Pin 4: GND
+Pin 5: NRST
+The J3 header has NO UART lines.
+The target MCU's serial port (USART1) is on PB6 (TX) and PB7 (RX), which are routed directly to the onboard THVD1450 RS-485 transceiver (U4) and out to the RS-485 Terminal Block (Terminals A & B).
+Because there are no physical wires between COM5 on the Nucleo board and PB6/PB7 on the target board, commands sent to COM5 never reached the MCU!
+Solution 1: View the Live Feed RIGHT NOW with Zero Extra Wires (swd_monitor.bat)
+Since your ST-LINK is already plugged into J3, we created a direct live monitor that reads the MCU's live calculations directly from RAM (0x200002C0) over SWD with no extra cables or adapters needed:
+
+Double-click or run in terminal:
+
+cmd
+.\swd_monitor.bat
+Verified Live Output:
+text
+====================================================================================
+         MIRRANT TDS 4002 - REAL-TIME LIVE SWD TELEMETRY MONITOR (J3 HEADER)        
+====================================================================================
+ Link     : ST-LINK Programmer connected to J3 Header (SWDIO, SWCLK, GND, 3.3V)     
+ Target   : STM32G030K8T6 | RAM Address: 0x200002C0 (s_reading: 48 bytes)           
+ Interval : 800 ms polling rate | Press Ctrl+C or 'Q' to Exit              
+====================================================================================
+[11:45:07.144] COND:  11261.9 uS/cm | TEMP:  41.4 °C | TDS:  5630.9 ppm | RES:   0.000 MΩ | SAL:  5.63 ppt | R1: ON  | R2: OFF | I1: 20.00mA | I2: 10.63mA
+Solution 2: To Use serial_monitor.bat via Serial / RS-485
+If you want to use the serial monitor with keystroke control (h, d, s, j, 1, 2):
+
+Method A: Using a USB-to-RS485 Adapter (Recommended)
+Connect adapter A (D+) to Board Terminal A.
+Connect adapter B (D-) to Board Terminal B.
+Connect adapter GND to J3 Header Pin 4 (GND).
+When plugged into your PC, a new COM port (e.g. COM6 or COM7) will appear in Windows.
+Run .\serial_monitor.bat and select that new COM port (not COM5).
+Method B: Jumper Wires from ST-LINK Nucleo (COM5) to Target Board
+If you want to use COM5 directly:
+
+On your Nucleo-F302R8 board, connect 2 jumper wires from connector CN3 (or Arduino header pins D0/D1):
+Nucleo STLK RX --> Target Board PB6 (USART1 TX)
+Nucleo STLK TX --> Target Board PB7 (USART1 RX)
+(Ground is already connected through J3 Pin 4)
+Run .\serial_monitor.bat and select COM5. All sent keys (s, h, d, j, 1, 2) will now reach the MCU immediately.
+11:40 AM
