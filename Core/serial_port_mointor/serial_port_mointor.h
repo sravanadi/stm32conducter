@@ -33,6 +33,11 @@ void serial_monitor_init(const settings_t *s);
 void serial_monitor_task(const meter_reading_t *r, const settings_t *s);
 
 /**
+ * @brief  USART1 interrupt handler callback for zero-loss RS-485 RX & instant DE/RE turnaround.
+ */
+void serial_monitor_usart1_irq(void);
+
+/**
  * @brief  Transmit raw bytes over RS-485 (handles PB5 DE assert and TC wait).
  * @param  data: Pointer to buffer.
  * @param  len: Number of bytes to transmit.

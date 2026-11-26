@@ -30,7 +30,8 @@ typedef enum {
     MODE_RES  = 1,   /* Resistivity */
     MODE_TDS  = 2,   /* Total Dissolved Solids */
     MODE_SAL  = 3,   /* Salinity */
-    MODE_FVAL = 4    /* Sample Test Formula: (a+b)(c-d) */
+    MODE_TURB = 4,   /* Turbidity in NTU */
+    MODE_FVAL = 5    /* Sample Test Formula: (a+b)(c-d) */
 } measure_mode_t;
 
 /* Temperature Probe Types */
@@ -180,6 +181,7 @@ typedef struct {
     float   res_mohm_cm;         /* Resistivity in M-Ohm * cm */
     float   tds_ppm;             /* Total Dissolved Solids in ppm */
     float   sal_ppt;             /* Salinity in ppt */
+    float   turb_ntu;            /* Turbidity reading in NTU (0.0 to 400.0 NTU) */
     float   sample_fval;         /* Calculated FVALUE = (a + b) * (c - d) */
 
     float   current1_ma;         /* Calculated mA output 1 */
@@ -191,6 +193,7 @@ typedef struct {
     bool    fault_open;          /* Probe disconnected */
     bool    fault_short;         /* Probe electrodes shorted */
     bool    fault_temp;          /* Temperature sensor missing */
+    bool    fault_turb;          /* Turbidity sensor offline */
     bool    out_of_range;        /* Measurement exceeds physical span */
 } meter_reading_t;
 

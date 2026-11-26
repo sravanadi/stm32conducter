@@ -23,9 +23,9 @@ swd_monitor.bat
 
 ### Live Output Example:
 ```text
-[11:45:07.144] COND:  11261.9 uS/cm | TEMP:  41.4 °C | TDS:  5630.9 ppm | RES:   0.000 MΩ | SAL:  5.63 ppt | R1: ON  | R2: OFF | I1: 20.00mA | I2: 10.63mA
+[11:45:07.144] COND:  11261.9 uS/cm | TURB:   12.4 NTU | TEMP:  41.4 °C | TDS:  5630.9 ppm | RES:   0.000 MΩ | SAL:  5.63 ppt | R1: ON  | R2: OFF | I1: 20.00mA | I2: 10.63mA
 ```
-- Reads the MCU's calculation structure directly from RAM (`0x200002E8`) over SWD without halting firmware execution.
+- Reads the MCU's calculation structure (`s_reading`) directly from RAM over SWD without halting firmware execution (auto-locating addresses from `build/display.map`).
 - Press **`q`** or **`Ctrl+C`** to exit.
 
 ---

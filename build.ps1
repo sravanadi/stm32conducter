@@ -71,6 +71,7 @@ $sources = @(
     "Core/Src/meter_afe.c",
     "Core/Src/meter_ui.c",
     "Core/Src/meter_comm.c",
+    "Core/Src/turbidity_sensor.c",
     "Core/serial_port_mointor/serial_port_mointor.c",
     "Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal.c",
     "Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_cortex.c",

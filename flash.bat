@@ -8,3 +8,4 @@ if %ERRORLEVEL% NEQ 0 (
     echo [Retrying with Under-Reset mode...]
     "C:\Program Files\STMicroelectronics\STM32Cube\STM32CubeProgrammer\bin\STM32_Programmer_CLI.exe" -c port=SWD freq=1800 mode=UR -w "%~dp0build\display.elf" -v -rst
 )
+

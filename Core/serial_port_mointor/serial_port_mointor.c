@@ -11,6 +11,7 @@
  */
 
 #include "serial_port_mointor.h"
+#include "turbidity_sensor.h"
 #include "board_pins.h"
 #include "meter_core.h"
 #include "stm32g030xx.h"
@@ -21,12 +22,19 @@
 
 #define RX_BUF_SIZE         128
 #define TX_BUF_SIZE         256
+#define RX_ISR_SIZE         256
 
 /* Receiver State */
 static uint8_t  s_rx_buf[RX_BUF_SIZE];
 static uint16_t s_rx_idx = 0;
 static uint32_t s_last_rx_time = 0;
 static uint32_t s_char_timeout_ms = 4;
+
+/* Interrupt-driven RX ring buffer (prevents byte drops during ADC/LCD tasks) */
+static volatile uint8_t  s_rx_isr_ring[RX_ISR_SIZE];
+static volatile uint16_t s_rx_isr_head = 0;
+static volatile uint16_t s_rx_isr_tail = 0;
+static volatile uint32_t s_rx_isr_last_tick = 0;
 
 /* Streaming State */
 static bool     s_streaming_enabled = false;     /* False: quiet listening for Modbus & commands; type 's' to enable live stream */
@@ -158,14 +166,19 @@ void serial_monitor_init(const settings_t *s)
     s_char_timeout_ms = (38500UL / baud) + 2;
 
     /* Clear any initial error flags */
-    USART1->ICR = USART_ICR_ORECF | USART_ICR_FECF | USART_ICR_NECF | USART_ICR_PECF;
-
-    /* 5. Enable USART1 Receiver and Transmitter */
-    USART1->CR1 |= USART_CR1_UE | USART_CR1_TE | USART_CR1_RE;
+    USART1->ICR = USART_ICR_ORECF | USART_ICR_FECF | USART_ICR_NECF | USART_ICR_PECF | USART_ICR_TCCF;
 
     s_rx_idx = 0;
+    s_rx_isr_head = 0;
+    s_rx_isr_tail = 0;
     s_last_rx_time = HAL_GetTick();
+    s_rx_isr_last_tick = s_last_rx_time;
     s_last_stream_time = HAL_GetTick();
+
+    /* 5. Enable USART1 Receiver, Transmitter, and RXNE interrupt */
+    USART1->CR1 |= USART_CR1_UE | USART_CR1_TE | USART_CR1_RE | USART_CR1_RXNEIE_RXFNEIE;
+    NVIC_SetPriority(USART1_IRQn, 1);
+    NVIC_EnableIRQ(USART1_IRQn);
 
     if (s)
     {
@@ -192,9 +205,68 @@ static volatile uint16_t s_tx_ring_head = 0;
 static volatile uint16_t s_tx_ring_tail = 0;
 static volatile bool     s_rs485_tx_active = false;
 
+void serial_monitor_usart1_irq(void)
+{
+    uint32_t isr = USART1->ISR;
+
+    /* Clear framing, noise, parity, or overrun error flags */
+    if (isr & (USART_ISR_ORE | USART_ISR_FE | USART_ISR_NE | USART_ISR_PE))
+    {
+        USART1->ICR = USART_ICR_ORECF | USART_ICR_FECF | USART_ICR_NECF | USART_ICR_PECF;
+    }
+
+    /* 1. Drain RX hardware register into lock-free ring buffer */
+    while (USART1->ISR & USART_ISR_RXNE_RXFNE)
+    {
+        uint8_t byte = (uint8_t)USART1->RDR;
+        /* Ignore self-echo if RS-485 DE is active */
+        if (!s_rs485_tx_active)
+        {
+            uint16_t next = (uint16_t)((s_rx_isr_head + 1U) % RX_ISR_SIZE);
+            if (next != s_rx_isr_tail)
+            {
+                s_rx_isr_ring[s_rx_isr_head] = byte;
+                s_rx_isr_head = next;
+                s_rx_isr_last_tick = HAL_GetTick();
+            }
+        }
+    }
+
+    /* 2. Feed TX ring buffer while bytes remain */
+    if ((USART1->CR1 & USART_CR1_TXEIE_TXFNFIE) && (isr & USART_ISR_TXE_TXFNF))
+    {
+        if (s_tx_ring_head != s_tx_ring_tail)
+        {
+            USART1->TDR = s_tx_ring[s_tx_ring_tail];
+            s_tx_ring_tail = (uint16_t)((s_tx_ring_tail + 1U) % TX_RING_SIZE);
+        }
+        else
+        {
+            USART1->CR1 &= ~USART_CR1_TXEIE_TXFNFIE;
+            USART1->CR1 |= USART_CR1_TCIE;
+        }
+    }
+
+    /* 3. Instant RS-485 DE/RE LOW turnaround when last stop bit completes */
+    if ((USART1->CR1 & USART_CR1_TCIE) && (USART1->ISR & USART_ISR_TC))
+    {
+        USART1->CR1 &= ~USART_CR1_TCIE;
+        USART1->ICR = USART_ICR_TCCF | USART_ICR_ORECF | USART_ICR_FECF | USART_ICR_NECF | USART_ICR_PECF;
+        if (s_tx_ring_head == s_tx_ring_tail)
+        {
+            GPIOB->BSRR = (1UL << (5 + 16)); /* Drive PB5 LOW -> Receive Mode */
+            s_rs485_tx_active = false;
+        }
+        else
+        {
+            USART1->CR1 |= USART_CR1_TXEIE_TXFNFIE;
+        }
+    }
+}
+
 static void serial_monitor_pump_tx(void)
 {
-    /* If bytes are queued in the ring buffer */
+    __disable_irq();
     if (s_tx_ring_head != s_tx_ring_tail)
     {
         if (!s_rs485_tx_active)
@@ -204,48 +276,29 @@ static void serial_monitor_pump_tx(void)
             s_rs485_tx_active = true;
             for (volatile int i = 0; i < 20; i++) { __NOP(); }
         }
-
-        /* Fill USART1 hardware TX FIFO / Data register as long as TX ready */
-        while ((s_tx_ring_head != s_tx_ring_tail) && (USART1->ISR & USART_ISR_TXE_TXFNF))
-        {
-            uint8_t byte = s_tx_ring[s_tx_ring_tail];
-            s_tx_ring_tail = (s_tx_ring_tail + 1) % TX_RING_SIZE;
-            USART1->TDR = byte;
-        }
+        USART1->CR1 &= ~USART_CR1_TCIE;
+        USART1->CR1 |= USART_CR1_TXEIE_TXFNFIE;
     }
-    else if (s_rs485_tx_active)
-    {
-        /* Ring buffer drained: check if shift register transmission is complete */
-        if (USART1->ISR & USART_ISR_TC)
-        {
-            /* Drive PB5 LOW -> Return to Receive Mode */
-            GPIOB->BSRR = (1UL << (5 + 16));
-            s_rs485_tx_active = false;
-            USART1->ICR = USART_ICR_ORECF | USART_ICR_FECF | USART_ICR_NECF | USART_ICR_PECF;
-        }
-    }
+    __enable_irq();
 }
 
 void serial_monitor_send_bytes(const uint8_t *data, uint16_t len)
 {
     if (!data || len == 0) return;
 
-    /* Push data into circular ring buffer, pumping hardware as needed */
     for (uint16_t i = 0; i < len; i++)
     {
-        uint16_t next_head = (s_tx_ring_head + 1) % TX_RING_SIZE;
+        uint16_t next_head = (uint16_t)((s_tx_ring_head + 1U) % TX_RING_SIZE);
         while (next_head == s_tx_ring_tail)
         {
-            /* Ring buffer full: pump hardware and wait for space */
+            /* Wait for ISR to drain a byte */
             serial_monitor_pump_tx();
         }
 
         s_tx_ring[s_tx_ring_head] = data[i];
         s_tx_ring_head = next_head;
-        serial_monitor_pump_tx();
     }
 
-    /* Pump remaining bytes to hardware */
     serial_monitor_pump_tx();
 }
 
@@ -265,7 +318,7 @@ void serial_monitor_send_reading(const meter_reading_t *r, const settings_t *s)
 {
     if (!r) return;
 
-    char cond_buf[12], raw_buf[12], temp_buf[10], tds_buf[12], res_buf[10], sal_buf[10];
+    char cond_buf[12], raw_buf[12], temp_buf[10], tds_buf[12], res_buf[10], sal_buf[10], turb_buf[12];
     char i1_buf[10], i2_buf[10], rcell_buf[12], rtemp_buf[12];
     char k_buf[10], tc_buf[10], tds_f_buf[10], tcal_buf[10], ecfac_buf[10], ecoff_buf[10];
 
@@ -274,6 +327,7 @@ void serial_monitor_send_reading(const meter_reading_t *r, const settings_t *s)
 
     /* Format all measurement numerical values (ensures clean display even if 0.0) */
     format_float(r->cond_us, 1, cond_buf, sizeof(cond_buf));
+    format_float(r->turb_ntu, 1, turb_buf, sizeof(turb_buf));
     format_float(r->cond_raw_us, 1, raw_buf, sizeof(raw_buf));
     format_float(disp_temp, 1, temp_buf, sizeof(temp_buf));
     format_float(r->tds_ppm, 1, tds_buf, sizeof(tds_buf));
@@ -281,13 +335,27 @@ void serial_monitor_send_reading(const meter_reading_t *r, const settings_t *s)
     format_float(r->sal_ppt, 2, sal_buf, sizeof(sal_buf));
     format_float(r->current1_ma, 2, i1_buf, sizeof(i1_buf));
     format_float(r->current2_ma, 2, i2_buf, sizeof(i2_buf));
-    format_float(r->cell_ohms, 1, rcell_buf, sizeof(rcell_buf));
-    format_float(r->temp_ohms, 1, rtemp_buf, sizeof(rtemp_buf));
+    if (r->fault_open || r->cell_ohms <= 0.0f)
+    {
+        strcpy(rcell_buf, "OPEN");
+    }
+    else
+    {
+        format_float(r->cell_ohms, 1, rcell_buf, sizeof(rcell_buf));
+    }
+    if (r->fault_temp || r->temp_ohms <= 0.0f)
+    {
+        strcpy(rtemp_buf, "OPEN");
+    }
+    else
+    {
+        format_float(r->temp_ohms, 1, rtemp_buf, sizeof(rtemp_buf));
+    }
 
     /* Active configuration tags */
     if (s)
     {
-        format_float(s->k_constant, 3, k_buf, sizeof(k_buf));
+        format_float(s->k_constant, 4, k_buf, sizeof(k_buf));
         format_float(s->temp_coef, 2, tc_buf, sizeof(tc_buf));
         format_float(s->tds_coef, 3, tds_f_buf, sizeof(tds_f_buf));
         format_float(s->temp_cal_offset, 1, tcal_buf, sizeof(tcal_buf));
@@ -308,10 +376,10 @@ void serial_monitor_send_reading(const meter_reading_t *r, const settings_t *s)
     uint8_t r2 = (s_relay2_override >= 0) ? (uint8_t)s_relay2_override : r->relay2_state;
     const char *mode_str = (s && s->measure_mode == 1) ? "SIM" : "REAL";
 
-    char msg[448];
+    char msg[512];
     snprintf(msg, sizeof(msg),
-             "[FEED] COND:%s uS/cm | RAW:%s | TEMP:%s %c | TDS:%s ppm | RES:%s M-Ohm | SAL:%s ppt | R1:%s | R2:%s | I1:%smA | I2:%smA | R_CELL:%s | R_TEMP:%s [K:%s TC:%s%% TDS_F:%s T_CAL:%s EC_FAC:%s EC_OFF:%s UNIT:%c %s]\r\n",
-             cond_buf, raw_buf, temp_buf, unit_c, tds_buf, res_buf, sal_buf,
+             "[FEED] COND:%s uS/cm | TURB:%s NTU | RAW:%s | TEMP:%s %c | TDS:%s ppm | RES:%s M-Ohm | SAL:%s ppt | R1:%s | R2:%s | I1:%smA | I2:%smA | R_CELL:%s | R_TEMP:%s [K:%s TC:%s%% TDS_F:%s T_CAL:%s EC_FAC:%s EC_OFF:%s UNIT:%c %s]\r\n",
+             cond_buf, turb_buf, raw_buf, temp_buf, unit_c, tds_buf, res_buf, sal_buf,
              r1 ? "ON" : "OFF",
              r2 ? "ON" : "OFF",
              i1_buf, i2_buf,
@@ -325,11 +393,12 @@ void serial_monitor_send_json(const meter_reading_t *r, const settings_t *s)
 {
     if (!r) return;
 
-    char cond_buf[12], raw_buf[12], temp_buf[10], tempf_buf[10], tds_buf[12], res_buf[10], sal_buf[10];
+    char cond_buf[12], raw_buf[12], temp_buf[10], tempf_buf[10], tds_buf[12], res_buf[10], sal_buf[10], turb_buf[12];
     char i1_buf[10], i2_buf[10], rcell_buf[12], rtemp_buf[12];
     char k_buf[10], tc_buf[10], tds_f_buf[10], tcal_buf[10], ecfac_buf[10], ecoff_buf[10];
 
     format_float(r->cond_us, 1, cond_buf, sizeof(cond_buf));
+    format_float(r->turb_ntu, 1, turb_buf, sizeof(turb_buf));
     format_float(r->cond_raw_us, 1, raw_buf, sizeof(raw_buf));
     format_float(r->temp_c, 1, temp_buf, sizeof(temp_buf));
     format_float(r->temp_f, 1, tempf_buf, sizeof(tempf_buf));
@@ -338,12 +407,26 @@ void serial_monitor_send_json(const meter_reading_t *r, const settings_t *s)
     format_float(r->sal_ppt, 2, sal_buf, sizeof(sal_buf));
     format_float(r->current1_ma, 2, i1_buf, sizeof(i1_buf));
     format_float(r->current2_ma, 2, i2_buf, sizeof(i2_buf));
-    format_float(r->cell_ohms, 1, rcell_buf, sizeof(rcell_buf));
-    format_float(r->temp_ohms, 1, rtemp_buf, sizeof(rtemp_buf));
+    if (r->fault_open || r->cell_ohms <= 0.0f)
+    {
+        strcpy(rcell_buf, "OPEN");
+    }
+    else
+    {
+        format_float(r->cell_ohms, 1, rcell_buf, sizeof(rcell_buf));
+    }
+    if (r->fault_temp || r->temp_ohms <= 0.0f)
+    {
+        strcpy(rtemp_buf, "OPEN");
+    }
+    else
+    {
+        format_float(r->temp_ohms, 1, rtemp_buf, sizeof(rtemp_buf));
+    }
 
     if (s)
     {
-        format_float(s->k_constant, 3, k_buf, sizeof(k_buf));
+        format_float(s->k_constant, 4, k_buf, sizeof(k_buf));
         format_float(s->temp_coef, 2, tc_buf, sizeof(tc_buf));
         format_float(s->tds_coef, 3, tds_f_buf, sizeof(tds_f_buf));
         format_float(s->temp_cal_offset, 1, tcal_buf, sizeof(tcal_buf));
@@ -363,11 +446,11 @@ void serial_monitor_send_json(const meter_reading_t *r, const settings_t *s)
     uint8_t r1 = (s_relay1_override >= 0) ? (uint8_t)s_relay1_override : r->relay1_state;
     uint8_t r2 = (s_relay2_override >= 0) ? (uint8_t)s_relay2_override : r->relay2_state;
 
-    char json[448];
+    char json[512];
     snprintf(json, sizeof(json),
-             "{\"time\":%lu,\"cond\":%s,\"raw\":%s,\"temp\":%s,\"tempf\":%s,\"unit\":\"%c\",\"tds\":%s,\"res\":%s,\"sal\":%s,\"r1\":%d,\"r2\":%d,\"i1\":%s,\"i2\":%s,\"rcell\":%s,\"rtemp\":%s,\"k\":%s,\"tc\":%s,\"tdsf\":%s,\"tcal\":%s,\"ecfac\":%s,\"ecoff\":%s,\"sim\":%d}\r\n",
+             "{\"time\":%lu,\"cond\":%s,\"turb\":%s,\"raw\":%s,\"temp\":%s,\"tempf\":%s,\"unit\":\"%c\",\"tds\":%s,\"res\":%s,\"sal\":%s,\"r1\":%d,\"r2\":%d,\"i1\":%s,\"i2\":%s,\"rcell\":\"%s\",\"rtemp\":\"%s\",\"k\":%s,\"tc\":%s,\"tdsf\":%s,\"tcal\":%s,\"ecfac\":%s,\"ecoff\":%s,\"sim\":%d}\r\n",
              HAL_GetTick(),
-             cond_buf, raw_buf, temp_buf, tempf_buf, (s && s->temp_unit == 1) ? 'F' : 'C',
+             cond_buf, turb_buf, raw_buf, temp_buf, tempf_buf, (s && s->temp_unit == 1) ? 'F' : 'C',
              tds_buf, res_buf, sal_buf,
              r1, r2, i1_buf, i2_buf,
              rcell_buf, rtemp_buf,
@@ -424,7 +507,7 @@ static void print_formulas(const meter_reading_t *r, const settings_t *s)
         char i1_b[10], i2_b[10];
         char r1_on[10], r1_off[10], r2_on[10], r2_off[10];
 
-        format_float(s->k_constant, 3, k_b, sizeof(k_b));
+        format_float(s->k_constant, 4, k_b, sizeof(k_b));
         format_float(s->temp_coef, 2, tc_b, sizeof(tc_b));
         format_float(s->tds_coef, 3, tds_b, sizeof(tds_b));
         format_float(s->temp_cal_offset, 1, tcal_b, sizeof(tcal_b));
@@ -594,7 +677,7 @@ static void print_config(const settings_t *s)
     char k_buf[10], tc_buf[10], tds_buf[10], tcal_buf[10], ecfac_buf[10], ecoff_buf[10];
     char r1_on[10], r1_off[10], r2_on[10], r2_off[10];
 
-    format_float(s->k_constant, 3, k_buf, sizeof(k_buf));
+    format_float(s->k_constant, 4, k_buf, sizeof(k_buf));
     format_float(s->temp_coef, 2, tc_buf, sizeof(tc_buf));
     format_float(s->tds_coef, 3, tds_buf, sizeof(tds_buf));
     format_float(s->temp_cal_offset, 1, tcal_buf, sizeof(tcal_buf));
@@ -821,9 +904,9 @@ static void check_settings_changes(const settings_t *s, const meter_reading_t *r
 
         if (k_changed)
         {
-            char old_b[10], new_b[10];
-            format_float(s_shadow_cfg.k_constant, 3, old_b, sizeof(old_b));
-            format_float(s->k_constant, 3, new_b, sizeof(new_b));
+            char old_b[12], new_b[12];
+            format_float(s_shadow_cfg.k_constant, 4, old_b, sizeof(old_b));
+            format_float(s->k_constant, 4, new_b, sizeof(new_b));
             char line[80];
             snprintf(line, sizeof(line), "  Cell Constant K  : %s -> %s (1/cm)\r\n", old_b, new_b);
             serial_monitor_send_str(line);
@@ -996,53 +1079,49 @@ void serial_monitor_task(const meter_reading_t *r, const settings_t *s)
         s_prev_relay2_state = cur_r2;
     }
 
-    /* 3. Clear any error flags that would block USART1 reception */
-    if (USART1->ISR & (USART_ISR_ORE | USART_ISR_FE | USART_ISR_NE | USART_ISR_PE))
+    /* 3. Drain interrupt RX ring buffer without corrupting binary Modbus bytes */
+    while (s_rx_isr_tail != s_rx_isr_head)
     {
-        USART1->ICR = USART_ICR_ORECF | USART_ICR_FECF | USART_ICR_NECF | USART_ICR_PECF;
-    }
+        uint8_t byte = s_rx_isr_ring[s_rx_isr_tail];
+        s_rx_isr_tail = (uint16_t)((s_rx_isr_tail + 1U) % RX_ISR_SIZE);
+        s_last_rx_time = s_rx_isr_last_tick;
 
-    /* 2. Read incoming bytes from USART1 */
-    while (USART1->ISR & USART_ISR_RXNE_RXFNE)
-    {
-        uint8_t byte = (uint8_t)USART1->RDR;
-        s_last_rx_time = now;
-
-        /* If user typed a printable ASCII command key, process it IMMEDIATELY */
-        if (byte == '?' || byte == 'h' || byte == 'H' ||
-            byte == 'd' || byte == 'D' || byte == 'r' || byte == 'R' ||
-            byte == 's' || byte == 'S' || byte == 'j' || byte == 'J' ||
-            byte == 'f' || byte == 'F' || byte == '1' || byte == '2' ||
-            byte == 'c' || byte == 'C' || byte == 'v' || byte == 'V' ||
-            byte == 'm' || byte == 'M')
-        {
-            s_rx_idx = 0; /* Reset any partial buffer */
-            handle_ascii_command(byte, r, s);
-            continue;
-        }
-
-        /* Ignore stray carriage return / newline / space */
-        if (byte == '\r' || byte == '\n' || byte == ' ')
-        {
-            continue;
-        }
-
-        /* Otherwise buffer byte for Modbus RTU inspection */
         if (s_rx_idx < RX_BUF_SIZE)
         {
             s_rx_buf[s_rx_idx++] = byte;
         }
     }
 
-    /* 3. Check for Modbus RTU 3.5-char timeout */
+    /* 4. Check for Modbus RTU 3.5-char silence timeout */
     if (s_rx_idx > 0 && (now - s_last_rx_time) >= s_char_timeout_ms)
     {
-        if (s_rx_idx >= 8) /* Valid Modbus frame has at least 8 bytes */
+        if (s_rx_idx == 1)
         {
-            uint16_t tx_len = modbus_handle(s_rx_buf, s_rx_idx, s_tx_buf, r, s);
-            if (tx_len > 0)
+            /* Single-character terminal command (safe: cannot collide with multi-byte Modbus RTU frames) */
+            uint8_t byte = s_rx_buf[0];
+            if (byte == '?' || byte == 'h' || byte == 'H' ||
+                byte == 'd' || byte == 'D' || byte == 'r' || byte == 'R' ||
+                byte == 's' || byte == 'S' || byte == 'j' || byte == 'J' ||
+                byte == 'f' || byte == 'F' || byte == '1' || byte == '2' ||
+                byte == 'c' || byte == 'C' || byte == 'v' || byte == 'V' ||
+                byte == 'm' || byte == 'M')
             {
-                serial_monitor_send_bytes(s_tx_buf, tx_len);
+                handle_ascii_command(byte, r, s);
+            }
+        }
+        else
+        {
+            /* Check if packet is a response from the Turbidity Sensor */
+            if (!turbidity_parse_packet(s_rx_buf, s_rx_idx))
+            {
+                if (s_rx_idx >= 8) /* Valid Modbus request has at least 8 bytes */
+                {
+                    uint16_t tx_len = modbus_handle(s_rx_buf, s_rx_idx, s_tx_buf, r, s);
+                    if (tx_len > 0)
+                    {
+                        serial_monitor_send_bytes(s_tx_buf, tx_len);
+                    }
+                }
             }
         }
         s_rx_idx = 0; /* Reset frame */

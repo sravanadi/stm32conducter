@@ -101,10 +101,11 @@ bool meter_afe_read(float *cell_ohms, float *temp_ohms)
     delay_us(15);
 
     /* ====================================================================== */
-    /* 1. Bipolar AC Excitation & Sampling for Conductivity Cell             */
+    /* 1. Bipolar AC Excitation & Symmetrical Dual-Phase Sampling             */
     /* ====================================================================== */
     uint32_t adc_fwd_sum = 0;
-    const uint8_t OVERSAMPLE = 16;
+    uint32_t adc_rev_sum = 0;
+    const uint8_t OVERSAMPLE = 32;
 
     for (uint8_t i = 0; i < OVERSAMPLE; i++)
     {
@@ -115,16 +116,26 @@ bool meter_afe_read(float *cell_ohms, float *temp_ohms)
         adc_fwd_sum += adc_sample_channel(0); /* Sample PA0 (ADC_IN0) */
 
         /* Negative Phase (Reverse Polarity): PA6 = LOW, PA7 = HIGH */
-        /* This rapidly clears any dielectric charge and balances net DC current */
         GPIOA->BSRR = (1UL << (6 + 16)) | (1UL << 7);
         delay_us(80);
+
+        adc_rev_sum += adc_sample_channel(0); /* Sample PA0 in reverse phase */
 
         /* Return to Neutral Ground State */
         GPIOA->BSRR = (1UL << (6 + 16)) | (1UL << (7 + 16));
         delay_us(20);
     }
 
-    float avg_adc_cell = (float)adc_fwd_sum / (float)OVERSAMPLE;
+    float avg_fwd = (float)adc_fwd_sum / (float)OVERSAMPLE;
+    float avg_rev = (float)adc_rev_sum / (float)OVERSAMPLE;
+
+    /* Symmetrical AC demodulation:
+     * In forward phase: V_sense = V_dd * R_cell / (R_ref + R_cell)
+     * In reverse phase: V_sense = V_dd * R_ref / (R_ref + R_cell)
+     * Therefore: (4095 - avg_rev) is a direct complementary measurement of R_cell.
+     * Averaging both half-cycles cancels out any DC galvanic contact offset!
+     */
+    float avg_adc_cell = (avg_fwd + (4095.0f - avg_rev)) * 0.5f;
 
     /* Cell voltage divider: V_cell = V_dd * (R_cell / (R_ref + R_cell)) */
     /* -> R_cell = R_ref * ADC / (4095.0 - ADC) */
@@ -133,7 +144,7 @@ bool meter_afe_read(float *cell_ohms, float *temp_ohms)
         /* Shorted electrodes or tied to GND */
         *cell_ohms = 0.1f;
     }
-    else if (avg_adc_cell >= 4085.0f)
+    else if (avg_adc_cell >= 4092.0f)
     {
         /* Open electrodes (disconnected probe in air) */
         *cell_ohms = 20000000.0f;

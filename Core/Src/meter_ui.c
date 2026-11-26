@@ -52,8 +52,8 @@ static settings_t       *s_cfg    = NULL;
 static bool              s_force_full_redraw = true;
 
 /* Persistent measurement mode selections */
-static uint8_t s_measure_type = 0; /* 0=COND, 1=RES, 2=TDS, 3=SAL, 4=FVAL */
-static uint8_t s_sub_bar_mode = 0; /* 0=Mode 1 (Temp & K), 1=Mode 2 (Currents I1 & I2) */
+static uint8_t s_measure_type = 0; /* 0=COND, 1=RES, 2=TDS, 3=SAL, 4=TURB */
+static uint8_t s_sub_bar_mode = 0; /* 0=Temp&K, 1=Turbidity&Temp, 2=TDS&SAL, 3=Currents I1&I2 */
 
 /* Wash state frozen value cache */
 static char s_frozen_val_str[16] = "";
@@ -131,16 +131,7 @@ static const char *s_sub_probe[] = {
     "2. PROBE CAL",
     "3. TEMP. COEF.",
     "4. TDS COEF.",
-    "5. DISPLAY UNIT",
-    "6. SAMPLE TEST"
-};
-
-static const char *s_sub_sample_test[] = {
-    "1. INPUT A",
-    "2. INPUT B",
-    "3. INPUT C",
-    "4. INPUT D",
-    "5. CALC FVAL"
+    "5. DISPLAY UNIT"
 };
 
 static const char *s_sub_temp[] = {
@@ -330,7 +321,7 @@ void meter_ui_init(settings_t *s, meter_reading_t *r)
         s_measure_type = 0;
     }
 
-    if (s_cfg->last_sub_bar_mode < 3)
+    if (s_cfg->last_sub_bar_mode < 4)
     {
         s_sub_bar_mode = s_cfg->last_sub_bar_mode;
     }
@@ -562,7 +553,12 @@ static void format_stable_measure_value(float val, uint8_t measure_type, uint8_t
         /* Salinity: 0.00 to 15.00 ppt (2 decimal places) */
         ftoa_custom(val, 2, 1, false, buf, max_len);
     }
-    else /* measure_type == 4: FVAL */
+    else if (measure_type == 4) /* TURB */
+    {
+        /* Turbidity: 0.0 to 400.0 NTU (1 decimal place) */
+        ftoa_custom(val, 1, 1, false, buf, max_len);
+    }
+    else /* measure_type == 5: FVAL */
     {
         /* FVALUE = (a + b) * (c - d) */
         float abs_v = (val < 0.0f) ? -val : val;
@@ -689,11 +685,22 @@ static void render_measure_screen(void)
         }
         format_stable_measure_value(r->sal_ppt, 3, 0, raw_val_str, sizeof(raw_val_str));
     }
-    else /* s_measure_type == 4: FVAL */
+    else if (s_measure_type == 4) /* TURB */
     {
-        type_str = "FVAL";
-        unit_str = "CALC";
-        format_stable_measure_value(r->sample_fval, 4, 0, raw_val_str, sizeof(raw_val_str));
+        type_str = "TURB";
+        unit_str = "NTU";
+        if (r->turb_ntu >= 400.0f || r->out_of_range)
+        {
+            is_out_of_range = true;
+        }
+        format_stable_measure_value(r->turb_ntu, 4, 0, raw_val_str, sizeof(raw_val_str));
+    }
+    else
+    {
+        /* Fallback / safe default: COND */
+        type_str = "COND";
+        unit_str = (s_cfg->display_unit == UNIT_MS_CM || (s_cfg->display_unit == UNIT_AUTO && r->cond_us >= 10000.0f)) ? "MS/CM" : "US/CM";
+        format_stable_measure_value(r->cond_us, 0, s_cfg->display_unit, raw_val_str, sizeof(raw_val_str));
     }
 
     if (s_force_full_redraw || strcmp(type_str, s_prev_type_str) != 0 || strcmp(unit_str, s_prev_unit_str) != 0)
@@ -713,9 +720,16 @@ static void render_measure_screen(void)
 
     if (s_measure_type == 4)
     {
-        snprintf(disp_val_str, sizeof(disp_val_str), "%s", raw_val_str);
+        if (r->fault_turb && r->turb_ntu <= 0.0f)
+        {
+            snprintf(disp_val_str, sizeof(disp_val_str), "0.0");
+        }
+        else
+        {
+            snprintf(disp_val_str, sizeof(disp_val_str), "%s", raw_val_str);
+        }
     }
-    else if (r->cell_ohms <= 0.0f || r->cond_us <= 0.0001f)
+    else if (r->fault_open || r->cell_ohms <= 0.0f || r->cond_us <= 0.0001f)
     {
         /* Clean zeros in middle when disconnected / no daughter device */
         snprintf(disp_val_str, sizeof(disp_val_str), "%s", raw_val_str);
@@ -762,7 +776,7 @@ static void render_measure_screen(void)
         lcd_print_font_centered(LCD_FONT_16X24, 3, disp_val_str);
     }
 
-    /* 4. PAGES 6-7 (ROWS 48-63): SUB-DISPLAY BAR (3 MODES) */
+    /* 4. PAGES 6-7 (ROWS 48-63): SUB-DISPLAY BAR (4 MODES) */
     char sub_bar_buf[32] = "";
 
     if (s_sub_bar_mode == 0)
@@ -770,7 +784,7 @@ static void render_measure_screen(void)
         /* Mode 0: Temperature and K-Constant */
         char temp_part[12] = "";
         char t_val[10];
-        if (r->cell_ohms <= 0.0f || r->temp_c < -40.0f)
+        if (r->fault_open || r->fault_temp || r->cell_ohms <= 0.0f || r->temp_c < -40.0f)
         {
             snprintf(temp_part, sizeof(temp_part), "0.0C");
         }
@@ -785,9 +799,9 @@ static void render_measure_screen(void)
             snprintf(temp_part, sizeof(temp_part), "%sC", t_val);
         }
 
-        char k_val[10];
-        ftoa_custom(s_cfg->k_constant, 3, 1, false, k_val, sizeof(k_val));
-        char k_part[12];
+        char k_val[12];
+        ftoa_custom(s_cfg->k_constant, 4, 1, false, k_val, sizeof(k_val));
+        char k_part[16];
         snprintf(k_part, sizeof(k_part), "K:%s", k_val);
 
         int temp_len = (int)strlen(temp_part);
@@ -798,11 +812,42 @@ static void render_measure_screen(void)
     }
     else if (s_sub_bar_mode == 1)
     {
-        /* Mode 1: Real-Time TDS and Salinity Readings */
+        /* Mode 1: Real-Time Turbidity & Temperature */
+        char tb_str[10];
+        ftoa_custom(r->turb_ntu, 1, 1, false, tb_str, sizeof(tb_str));
+        char tb_part[16];
+        snprintf(tb_part, sizeof(tb_part), "TB:%sNTU", (r->fault_turb && r->turb_ntu <= 0.0f) ? "0.0" : tb_str);
+
+        char temp_part[12] = "";
+        char t_val[10];
+        if (r->fault_open || r->fault_temp || r->cell_ohms <= 0.0f || r->temp_c < -40.0f)
+        {
+            snprintf(temp_part, sizeof(temp_part), "0.0C");
+        }
+        else if (s_cfg->temp_unit == TEMP_UNIT_F)
+        {
+            ftoa_custom(r->temp_f, 1, 1, false, t_val, sizeof(t_val));
+            snprintf(temp_part, sizeof(temp_part), "%sF", t_val);
+        }
+        else
+        {
+            ftoa_custom(r->temp_c, 1, 1, false, t_val, sizeof(t_val));
+            snprintf(temp_part, sizeof(temp_part), "%sC", t_val);
+        }
+
+        int tb_len = (int)strlen(tb_part);
+        int temp_len = (int)strlen(temp_part);
+        int spaces = 16 - tb_len - temp_len;
+        if (spaces < 0) spaces = 0;
+        snprintf(sub_bar_buf, sizeof(sub_bar_buf), "%s%*s%s", tb_part, spaces, "", temp_part);
+    }
+    else if (s_sub_bar_mode == 2)
+    {
+        /* Mode 2: Real-Time TDS and Salinity Readings */
         char tds_part[16] = "";
         char sal_part[16] = "";
 
-        if (r->cell_ohms <= 0.0f || r->cond_us <= 0.0001f)
+        if (r->fault_open || r->cell_ohms <= 0.0f || r->cond_us <= 0.0001f)
         {
             snprintf(tds_part, sizeof(tds_part), "TDS:0");
             snprintf(sal_part, sizeof(sal_part), "S:0.00");
@@ -842,7 +887,7 @@ static void render_measure_screen(void)
     }
     else
     {
-        /* Mode 2: Two Current Outputs (I1 & I2) */
+        /* Mode 3: Two Current Outputs (I1 & I2) */
         char c1_val[10], c2_val[10];
         ftoa_custom(r->current1_ma, 1, 1, false, c1_val, sizeof(c1_val));
         ftoa_custom(r->current2_ma, 1, 1, false, c2_val, sizeof(c2_val));
@@ -885,7 +930,7 @@ static void render_status_screen(void)
     lcd_print_centered(0, "= STATUS =");
     lcd_draw_hline(1, 0x08);
 
-    char line[24];
+    char line[32];
     snprintf(line, sizeof(line), "R1: %-3s    R2: %-3s",
              r->relay1_state ? "ON" : "OFF",
              r->relay2_state ? "ON" : "OFF");
@@ -904,7 +949,16 @@ static void render_status_screen(void)
     snprintf(line, sizeof(line), "  %s US/CM", ec_str);
     lcd_print(4, 2, line);
 
-    snprintf(line, sizeof(line), "CAL POINTS: %d", (int)s_cfg->cal_points_count);
+    char turb_str[10];
+    if (r->fault_turb)
+    {
+        snprintf(turb_str, sizeof(turb_str), "--.-");
+    }
+    else
+    {
+        ftoa_custom(r->turb_ntu, 1, 1, false, turb_str, sizeof(turb_str));
+    }
+    snprintf(line, sizeof(line), "TB:%sNTU  CAL:%d", turb_str, (int)s_cfg->cal_points_count);
     lcd_print(5, 2, line);
 
     lcd_draw_hline(6, 0x08);
@@ -1009,7 +1063,7 @@ static void render_screen(void)
             break;
 
         case UI_MENU_L2:
-            if (s_l1_cursor == 0)      render_vertical_menu("= 1. PROBE SET =", s_sub_probe, 6, s_l2_cursor);
+            if (s_l1_cursor == 0)      render_vertical_menu("= 1. PROBE SET =", s_sub_probe, 5, s_l2_cursor);
             else if (s_l1_cursor == 1) render_vertical_menu("= 2. TEMPERATURE =", s_sub_temp, 4, s_l2_cursor);
             else if (s_l1_cursor == 2) render_vertical_menu("= 3. ALARM SET =", s_sub_alarm, 2, s_l2_cursor);
             else if (s_l1_cursor == 3) render_vertical_menu("= 4. CURRENT SET =", s_sub_current, 2, s_l2_cursor);
@@ -1022,10 +1076,6 @@ static void render_screen(void)
             if (s_l1_cursor == 0 && s_l2_cursor == 1) /* 1.2 Probe CAL */
             {
                 render_vertical_menu("= PROBE CAL =", s_sub_cal_items, 8, s_l3_cursor);
-            }
-            else if (s_l1_cursor == 0 && s_l2_cursor == 5) /* 1.6 Sample Test */
-            {
-                render_vertical_menu("= SAMPLE TEST =", s_sub_sample_test, 5, s_l3_cursor);
             }
             else if (s_l1_cursor == 2) /* 3. Alarm Set (Relay I or II) */
             {
@@ -1475,13 +1525,13 @@ void meter_ui_task(void)
             s_l1_cursor = 0;
             lcd_clear();
         }
-        else if (ev == BTN_EVT_DOWN_CLICK) /* SW3: Cycle bottom sub-bar (Temp&K -> TDS&SAL -> Currents) */
+        else if (ev == BTN_EVT_DOWN_CLICK) /* SW3: Cycle bottom sub-bar (Temp&K -> TB&Temp -> TDS&SAL -> Currents) */
         {
-            s_sub_bar_mode = (s_sub_bar_mode + 1) % 3;
+            s_sub_bar_mode = (s_sub_bar_mode + 1) % 4;
             s_cfg->last_sub_bar_mode = s_sub_bar_mode;
             s_force_full_redraw = true;
         }
-        else if (ev == BTN_EVT_RIGHT_CLICK) /* SW2: Cycle COND, RES, TDS, SAL, FVAL */
+        else if (ev == BTN_EVT_RIGHT_CLICK) /* SW2: Cycle COND, RES, TDS, SAL, TURB */
         {
             s_measure_type = (s_measure_type + 1) % 5;
             s_cfg->last_measure_type = s_measure_type;
@@ -1566,7 +1616,7 @@ void meter_ui_task(void)
     else if (s_screen == UI_MENU_L2)
     {
         uint8_t count = 5;
-        if (s_l1_cursor == 0) count = 6; /* 1. Probe Set has 6 items */
+        if (s_l1_cursor == 0) count = 5; /* 1. Probe Set has 5 items */
         else if (s_l1_cursor == 1 || s_l1_cursor == 4) count = 4;
         else if (s_l1_cursor == 2 || s_l1_cursor == 3) count = 2;
 
@@ -1587,12 +1637,11 @@ void meter_ui_task(void)
         {
             if (s_l1_cursor == 0) /* 1. Probe Set */
             {
-                if (s_l2_cursor == 0)      open_float_editor("K CONSTANT", &s_cfg->k_constant, "%06.3f", 0.001f, 99.999f);
+                if (s_l2_cursor == 0)      open_float_editor("K CONSTANT", &s_cfg->k_constant, "%07.4f", 0.0001f, 9.9999f);
                 else if (s_l2_cursor == 1) { s_screen = UI_MENU_L3; s_l3_cursor = 0; lcd_clear(); } /* Probe CAL */
                 else if (s_l2_cursor == 2) open_float_editor("TEMP COEF %/C", &s_cfg->temp_coef, "%05.2f", 0.00f, 99.99f);
                 else if (s_l2_cursor == 3) open_float_editor("TDS COEF", &s_cfg->tds_coef, "%06.3f", 0.001f, 99.999f);
                 else if (s_l2_cursor == 4) open_option_picker("= DISPLAY UNIT =", s_opt_units, 3, &s_cfg->display_unit);
-                else if (s_l2_cursor == 5) { s_screen = UI_MENU_L3; s_l3_cursor = 0; lcd_clear(); } /* 6. Sample Test */
             }
             else if (s_l1_cursor == 1) /* 2. Temperature */
             {
@@ -1692,7 +1741,6 @@ void meter_ui_task(void)
     {
         uint8_t count = 4;
         if (s_l1_cursor == 0 && s_l2_cursor == 1) count = 8; /* Probe CAL: 8 items */
-        else if (s_l1_cursor == 0 && s_l2_cursor == 5) count = 5; /* Sample Test: 5 items */
         else if (s_l1_cursor == 2)
         {
             uint8_t func = (s_l2_cursor == 0) ? s_cfg->relay1_func : s_cfg->relay2_func;
@@ -1734,16 +1782,6 @@ void meter_ui_task(void)
                     s_confirm_choice_idx = 0;
                     open_option_picker_cb("= RESET CAL =", s_opt_confirm, 2, &s_confirm_choice_idx, cb_reset_cal);
                 }
-            }
-
-            /* 1.6 SAMPLE TEST SUBMENU */
-            else if (s_l1_cursor == 0 && s_l2_cursor == 5)
-            {
-                if (s_l3_cursor == 0)      open_float_editor("INPUT A", &s_cfg->sample_a, "%+08.2f", -9999.99f, 99999.99f);
-                else if (s_l3_cursor == 1) open_float_editor("INPUT B", &s_cfg->sample_b, "%+08.2f", -9999.99f, 99999.99f);
-                else if (s_l3_cursor == 2) open_float_editor("INPUT C", &s_cfg->sample_c, "%+08.2f", -9999.99f, 99999.99f);
-                else if (s_l3_cursor == 3) open_float_editor("INPUT D", &s_cfg->sample_d, "%+08.2f", -9999.99f, 99999.99f);
-                else if (s_l3_cursor == 4) { s_screen = UI_SAMPLE_PREVIEW; lcd_clear(); }
             }
 
             /* 3. ALARM SET (RELAY I or II) */

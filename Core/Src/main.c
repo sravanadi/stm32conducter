@@ -13,6 +13,7 @@
 #include "meter_afe.h"
 #include "meter_ui.h"
 #include "meter_comm.h"
+#include "turbidity_sensor.h"
 #include "serial_port_mointor.h"
 
 /* Peripheral Handles */
@@ -74,6 +75,9 @@ int main(void)
     /* Initialize RS-485 Modbus RTU interface on USART1 */
     meter_comm_init(&s_settings);
 
+    /* Initialize Digital Turbidity Sensor Master driver */
+    turbidity_init();
+
     /* Initialize Mirrant User Interface */
     meter_ui_init(&s_settings, &s_reading);
 
@@ -130,7 +134,8 @@ int main(void)
             }
         }
 
-        /* 2. Process RS-485 Modbus RTU slave communications */
+        /* 2. Poll Turbidity Sensor & process RS-485 Modbus RTU communications */
+        turbidity_task(now);
         meter_comm_task(&s_reading, &s_settings);
 
         /* 3. Process button events and refresh LCD interface */
